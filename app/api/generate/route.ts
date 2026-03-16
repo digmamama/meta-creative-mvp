@@ -13,6 +13,8 @@ import {
 } from "@/lib/config";
 import { supabase } from "@/lib/supabase";
 
+export const runtime = "nodejs";
+
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
@@ -70,6 +72,12 @@ function sanitizeClaim(claim: string) {
     .slice(0, 80);
 }
 
+function cleanBase64(base64: string) {
+  return base64
+    .replace(/^data:image\/\w+;base64,/, "")
+    .replace(/[\r\n\s\u2028\u2029]/g, "");
+}
+
 async function uploadBase64ImageToSupabase(
   base64: string,
   claim: string,
@@ -79,7 +87,8 @@ async function uploadBase64ImageToSupabase(
   const timestamp = Math.floor(Date.now() / 1000);
   const fileName = `${cleanClaim}_${timestamp}_${index}.png`;
 
-  const bytes = Buffer.from(base64, "base64");
+  const safeBase64 = cleanBase64(base64);
+  const bytes = Buffer.from(safeBase64, "base64");
 
   const { error: uploadError } = await supabase.storage
     .from(BUCKET)
