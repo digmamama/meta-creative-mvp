@@ -15,13 +15,17 @@ import { supabase } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 
+function cleanEnv(value: string | undefined) {
+  return (value || "").replace(/[\r\n\u2028\u2029]/g, "").trim();
+}
+
 const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: cleanEnv(process.env.OPENAI_API_KEY),
 });
 
-const BUCKET = process.env.SUPABASE_BUCKET || "creative-images";
-const SUPABASE_URL = process.env.SUPABASE_URL!;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const BUCKET = cleanEnv(process.env.SUPABASE_BUCKET) || "creative-images";
+const SUPABASE_URL = cleanEnv(process.env.SUPABASE_URL);
+const SUPABASE_SERVICE_ROLE_KEY = cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 const FORMAT_WEIGHTS: Record<FormatCode, number> = {
   F1: 5,
@@ -74,6 +78,11 @@ function sanitizeClaim(claim: string) {
     .slice(0, 80);
 }
 
+function normalizeCountries(countries?: string) {
+  if (!countries) return null;
+  return countries.replace(/\s+/g, "");
+}
+
 function cleanBase64(base64: string) {
   return base64
     .replace(/^data:image\/\w+;base64,/, "")
@@ -100,7 +109,6 @@ async function uploadBase64ImageToSupabase(
   const fileName = `${cleanClaim}_${timestamp}_${index}.png`;
 
   const arrayBuffer = base64ToArrayBuffer(base64);
-
   const uploadUrl = `${SUPABASE_URL}/storage/v1/object/${BUCKET}/${fileName}`;
 
   const response = await fetch(uploadUrl, {
@@ -133,6 +141,8 @@ async function saveCreativeRecord(params: {
   format: FormatCode;
   fileName: string;
   imageUrl: string;
+  slug?: string | null;
+  countries?: string | null;
 }) {
   const { error } = await supabase.from("creatives").insert({
     claim: params.claim,
@@ -140,6 +150,8 @@ async function saveCreativeRecord(params: {
     format: params.format,
     file_name: params.fileName,
     image_url: params.imageUrl,
+    slug: params.slug ?? null,
+    countries: params.countries ?? null,
   });
 
   if (error) {
@@ -150,9 +162,14 @@ async function saveCreativeRecord(params: {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
+
     const claim = body?.claim;
     const count = Number(body?.count || TEST_IMAGE_COUNT);
     const language = body?.language as SupportedLanguage;
+    const slug = body?.slug ? String(body.slug).trim() : null;
+    const countries = normalizeCountries(
+      body?.countries ? String(body.countries) : undefined
+    );
 
     if (!claim || typeof claim !== "string") {
       return NextResponse.json(
@@ -200,6 +217,8 @@ export async function POST(req: Request) {
           format,
           fileName: uploaded.fileName,
           imageUrl: uploaded.publicUrl,
+          slug,
+          countries,
         });
 
         images.push(uploaded.publicUrl);
@@ -211,6 +230,8 @@ export async function POST(req: Request) {
           format,
           fileName: "",
           imageUrl: img.url,
+          slug,
+          countries,
         });
 
         images.push(img.url);
