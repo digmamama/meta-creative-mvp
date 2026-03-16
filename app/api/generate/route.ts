@@ -79,10 +79,10 @@ function cleanBase64(base64: string) {
     .replace(/[^A-Za-z0-9+/=]/g, "");
 }
 
-function base64ToUint8Array(base64: string) {
+function base64ToBlob(base64: string) {
   const cleaned = cleanBase64(base64);
   const buffer = Buffer.from(cleaned, "base64");
-  return new Uint8Array(buffer);
+  return new Blob([buffer], { type: "image/png" });
 }
 
 async function uploadBase64ImageToSupabase(
@@ -94,11 +94,11 @@ async function uploadBase64ImageToSupabase(
   const timestamp = Math.floor(Date.now() / 1000);
   const fileName = `${cleanClaim}_${timestamp}_${index}.png`;
 
-  const bytes = base64ToUint8Array(base64);
+  const blob = base64ToBlob(base64);
 
   const { error: uploadError } = await supabase.storage
     .from(BUCKET)
-    .upload(fileName, bytes, {
+    .upload(fileName, blob, {
       contentType: "image/png",
       upsert: false,
     });
