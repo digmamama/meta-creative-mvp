@@ -20,6 +20,8 @@ const client = new OpenAI({
 });
 
 const BUCKET = process.env.SUPABASE_BUCKET || "creative-images";
+const SUPABASE_URL = process.env.SUPABASE_URL!;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 const FORMAT_WEIGHTS: Record<FormatCode, number> = {
   F1: 5,
@@ -79,10 +81,13 @@ function cleanBase64(base64: string) {
     .replace(/[^A-Za-z0-9+/=]/g, "");
 }
 
-function base64ToBlob(base64: string) {
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
   const cleaned = cleanBase64(base64);
   const buffer = Buffer.from(cleaned, "base64");
-  return new Blob([buffer], { type: "image/png" });
+  return buffer.buffer.slice(
+    buffer.byteOffset,
+    buffer.byteOffset + buffer.byteLength
+  );
 }
 
 async function uploadBase64ImageToSupabase(
@@ -94,17 +99,24 @@ async function uploadBase64ImageToSupabase(
   const timestamp = Math.floor(Date.now() / 1000);
   const fileName = `${cleanClaim}_${timestamp}_${index}.png`;
 
-  const blob = base64ToBlob(base64);
+  const arrayBuffer = base64ToArrayBuffer(base64);
 
-  const { error: uploadError } = await supabase.storage
-    .from(BUCKET)
-    .upload(fileName, blob, {
-      contentType: "image/png",
-      upsert: false,
-    });
+  const uploadUrl = `${SUPABASE_URL}/storage/v1/object/${BUCKET}/${fileName}`;
 
-  if (uploadError) {
-    throw new Error(`Supabase upload failed: ${uploadError.message}`);
+  const response = await fetch(uploadUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      "Content-Type": "image/png",
+      "x-upsert": "false",
+    },
+    body: arrayBuffer,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Supabase upload failed: ${errorText}`);
   }
 
   const { data } = supabase.storage.from(BUCKET).getPublicUrl(fileName);
